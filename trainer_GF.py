@@ -11,6 +11,8 @@ import numpy as np
 import random
 import math
 
+import time
+
 from dataset import binary_counter_1d
 from architecture import Cnn1dReLUAvg
 from gradientflow import gradientflow_backprop
@@ -70,8 +72,7 @@ parser.add_argument('--loss', type=str, help='hinge, logistic', default='hinge')
 	OUTPUT ARGS
 '''
 parser.add_argument('--testsize', type=int, help='size of the test set', default=2048)
-parser.add_argument('--maxstep', type=int, help='maximum number of steps', default=100000)
-parser.add_argument('--maxtime', type=float, help='maximum time', default=1e10)
+parser.add_argument('--maxtime', type=float, help='maximum time in hours', default=23.5)
 parser.add_argument('--savestep', type=int, help='frequency of saves in steps', default=100)
 parser.add_argument('--minfrac', type=float, help='goal training loss', default=0.0)
 parser.add_argument('--array', type=int, help='index for array runs', default=None)
@@ -112,9 +113,11 @@ test_f = ScalarTestError()
 
 dynamics = []
 freq = args.savestep
-max_step = args.maxstep
 max_time = args.maxtime
 min_frac = args.minfrac
+
+start_time = time.time()
+stop = False
 
 for state, internals in gradientflow_backprop(model, x_train, y_train, loss_f, subf0=True, max_dgrad=1e10, max_dout=1e-1/alpha):
 
@@ -131,7 +134,7 @@ for state, internals in gradientflow_backprop(model, x_train, y_train, loss_f, s
         dynamics.append(current)
         break
 
-    if state['t'] > max_time:
+    if time.time() - start_time > max_time * 3600:
 
         with torch.no_grad():
             out = internals['f'](x_test)
@@ -142,19 +145,7 @@ for state, internals in gradientflow_backprop(model, x_train, y_train, loss_f, s
         current['test'] = testerr
         print(current)
         dynamics.append(current)
-        break
-
-    if state['step'] > max_step:
-
-        with torch.no_grad():
-            out = internals['f'](x_test)
-        test = alpha * ( out - model_init(x_test))
-        testerr = test_f(test, y_test).item()
-
-        current = state
-        current['test'] = testerr
-        print(current)
-        dynamics.append(current)
+	stop = True
         break
 
     if state['step'] % freq == 0:
@@ -192,6 +183,10 @@ filename += '_P' +str(train_size)
 
 if args.array is not None:
     filename += '_' + str(args.array)
+
+if stop:
+    filename += '_stop'
+
 torch.save({
             'args': args,
             'director': director,
@@ -199,4 +194,5 @@ torch.save({
             'model_init': model_init.state_dict(),
             'training_set': training_set,
             'dynamics': dynamics,
+	    'stopped': stop
            }, filename +'.pt')
