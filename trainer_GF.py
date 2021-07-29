@@ -74,7 +74,7 @@ parser.add_argument('--loss', type=str, help='hinge, logistic', default='hinge')
 parser.add_argument('--testsize', type=int, help='size of the test set', default=2048)
 parser.add_argument('--maxtime', type=float, help='maximum time in hours', default=23.5)
 parser.add_argument('--savestep', type=int, help='frequency of saves in steps', default=100)
-parser.add_argument('--minfrac', type=float, help='goal training loss', default=0.0)
+parser.add_argument('--minfrac', type=float, help='goal training loss', default=1e-8)
 parser.add_argument('--array', type=int, help='index for array runs', default=None)
 
 args = parser.parse_args()
