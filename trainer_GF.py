@@ -194,5 +194,5 @@ torch.save({
             'model_init': model_init.state_dict(),
             'training_set': training_set,
             'dynamics': dynamics,
-	    'stopped': stop
+            'stopped': stop
            }, filename +'.pt')
