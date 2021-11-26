@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+from myutils import hypersphere_random_sampler
+
 ''' Input of convolutional layers is given as a tensor of rank 2 + d,
 
         - input(conv) = Tensor[(batch_size)x(input_channels)x(image_length)^d]
@@ -85,17 +87,46 @@ class MaxPool1d(nn.Module):
         return F.max_pool1d(x, x.size(2))
 
 ''' 
+	one-hidden-layer fully-connected with relu and convenient init
+'''
+class oneHL(nn.Module):
+
+    def __init__(self, n_hidden, input_size, norm=None):
+
+        super(oneHL, self).__init__()
+
+        self.h = n_hidden
+        self.d = input_size
+        self.weight = nn.Parameter( hypersphere_random_sampler( n_hidden, input_size, device='cpu'))
+        self.coeff = nn.Parameter( torch.cat( [torch.ones( 1, n_hidden // 2), -torch.ones( 1, n_hidden // 2)], dim=1))
+
+        if norm=='mf':
+            self.norm = float( n_hidden)
+        elif norm=='ntk':
+            self.norm = math.sqrt( float(n_hidden))
+        else:
+            self.norm = 1.0
+
+    # Forward pass
+    def forward(self, x):
+        out = F.linear( x.reshape(-1, self.d), self.weight, bias=None)
+        out = F.relu( out)
+        out = F.linear( out, self.coeff, bias=None)/ self.norm
+        return out
+
+''' 
 	one-hidden-layer convolutional with relu + avg pooling
 '''
 class Cnn1dReLUAvg(nn.Module):
 
-    def __init__(self, n_hidden, filter_size, bias=False, pbc=True, stride=1):
+    def __init__(self, n_hidden, filter_size, bias=False, pbc=True, stride=1, norm=None, smooth=1):
 
         super(Cnn1dReLUAvg, self).__init__()
 
         self.h = n_hidden
         self.fs = filter_size
         self.bias = bias
+        self.smooth = smooth
 
         if pbc:
             self.cnn1 = Conv1dPBC_N(1, n_hidden, filter_size=filter_size, bias=bias)
@@ -104,11 +135,21 @@ class Cnn1dReLUAvg(nn.Module):
         self.pool1 = AvgPool1d()
         self.fc1 = Linear_N(n_hidden, 1, bias=False)
 
+        if norm=='mf':
+            self.norm = float( n_hidden)
+        elif norm=='ntk':
+            self.norm = math.sqrt( float(n_hidden))
+        else:
+            self.norm = 1.0
+
     # Forward pass
     def forward(self, x):
-        pre_act = self.cnn1(x/math.sqrt( float( self.fs)))
-        post_act = F.relu(pre_act)
-        pooled = self.pool1(post_act)
-        pooled = pooled.view(pooled.size(0), -1)
-        out = self.fc1(pooled)/math.sqrt( float(self.h))
+        out = self.cnn1( x/math.sqrt( float( self.fs)))
+        if self.smooth == 0:
+            out = torch.heaviside( out, torch.zeros_like(out))
+        else:
+            out = torch.pow( F.relu( out), self.smooth)
+        out = self.pool1( out)
+        out = out.view( out.size(0), -1)
+        out = self.fc1( out)/ self.norm
         return out
